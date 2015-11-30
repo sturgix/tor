@@ -436,9 +436,10 @@ command_process_created_cell(cell_t *cell, channel_t *chan)
 static void
 command_process_relay_cell(cell_t *cell, channel_t *chan)
 {
-  const or_options_t *options = get_options();
+  //const or_options_t *options = get_options();
   circuit_t *circ;
-  int reason, direction;
+  //int reason;
+  int direction;
 
   circ = circuit_get_by_circid_channel(cell->circ_id, chan);
 
@@ -504,6 +505,14 @@ command_process_relay_cell(cell_t *cell, channel_t *chan)
     }
   }
 
+  /* This will queue crypt operations to the thread pool. Once finished
+   * the main thread (this thread) will receive an event notification
+   * and call the callback function.  The code below has been moved into
+   * the callback function.  The return value used to matter but now it
+   * doesn't as it is interpreted by the callback function */
+  circuit_receive_relay_cell(cell, circ, direction);
+
+#if 0
   if ((reason = circuit_receive_relay_cell(cell, circ, direction)) < 0) {
     log_fn(LOG_PROTOCOL_WARN,LD_PROTOCOL,"circuit_receive_relay_cell "
            "(%s) failed. Closing.",
@@ -518,6 +527,7 @@ command_process_relay_cell(cell_t *cell, channel_t *chan)
       TO_OR_CIRCUIT(circ)->circuit_carries_hs_traffic_stats) {
     rep_hist_seen_new_rp_cell();
   }
+#endif
 }
 
 /** Process a 'destroy' <b>cell</b> that just arrived from

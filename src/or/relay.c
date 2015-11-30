@@ -24,6 +24,7 @@
 #include "connection_edge.h"
 #include "connection_or.h"
 #include "control.h"
+#include "cryptothreads.h"
 #include "geoip.h"
 #include "main.h"
 #include "networkstatus.h"
@@ -34,6 +35,7 @@
 #include "relay.h"
 #include "rendcache.h"
 #include "rendcommon.h"
+#include "rephist.h"
 #include "router.h"
 #include "routerlist.h"
 #include "routerparse.h"
@@ -165,6 +167,92 @@ relay_crypt_one_payload(crypto_cipher_t *cipher, uint8_t *in,
   return 0;
 }
 
+/** This code was moved from command_process_relay_cell() in command.c
+ * to accommodate the new multli-threaded workflow of queueing work
+ * to the thread pool and then the main thread calling the callback 
+ * function. It is possible this function is needed before work queued
+ * but mostly after.
+ */
+static void
+circuit_receive_relay_cell_post(circuit_t *circ, int reason, cell_direction_t direction, int line, char *file) {
+
+  tor_assert(circ);
+  tor_assert(direction == CELL_DIRECTION_OUT ||
+             direction == CELL_DIRECTION_IN);
+
+  const or_options_t *options = get_options();
+
+  if (circ->marked_for_close) {
+    log_warn(LD_BUG,
+        "Call to circuit_mark_for_close on closed circuit from %s:%d with reason %i", file, line, reason);
+    return;
+  }
+#if 0
+else {
+    log_warn(LD_OR,
+        "FYI: Call to circuit_mark_for_close from %s:%d", file, line);
+  }
+#endif
+
+  if (reason < 0 ) {
+    log_fn(LOG_PROTOCOL_WARN,LD_PROTOCOL,"circuit_receive_relay_cell "
+         "(%s) failed. Closing.",
+         direction==CELL_DIRECTION_OUT?"forward":"backward");
+    circuit_mark_for_close(circ, -reason);
+  }
+
+  /* If this is a cell in an RP circuit, count it as part of the
+     hidden service stats */
+
+  if (options->HiddenServiceStatistics &&
+      !CIRCUIT_IS_ORIGIN(circ) &&
+      TO_OR_CIRCUIT(circ)->circuit_carries_hs_traffic_stats) {
+    rep_hist_seen_new_rp_cell();
+  }
+
+  return;
+}
+
+#if 0
+workqueue_reply_t
+cryptothread_threadfn(void *state_, void *work_) {
+
+  (void)state_;
+  cryptothread_job_t  *job = work_;
+
+  if (relay_crypt(job) < 0) {
+    log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
+    //return -END_CIRC_REASON_INTERNAL;
+    return WQ_RPL_ERROR;
+  }
+
+  return WQ_RPL_REPLY;
+}
+
+static int
+queue_job_for_cryptothread(cryptothread_job_t *job_) {
+
+#if 0
+  workqueue_entry_t *queue_entry;
+
+  queue_entry = threadpool_queue_work(get_crypto_threadpool(),
+                      cryptothread_threadfn,
+                      cryptothread_replyfn,
+                      job_);
+
+  if (!queue_entry) {
+    log_warn(LD_BUG, "Couldn't queue work on crypto threadpool");
+    return -1;
+  }
+
+  log_debug(LD_OR, "Queued cryptothread task %p", job_);
+#endif
+  cryptothread_threadfn(NULL, job);
+//  cryptothread_replyfn(
+  return 0;
+}
+#endif
+
 /** Receive a relay cell:
  *  - Crypt it (encrypt if headed toward the origin or if we <b>are</b> the
  *    origin; decrypt if we're headed toward the exit).
@@ -190,12 +278,18 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
   tor_assert(circ);
   tor_assert(cell_direction == CELL_DIRECTION_OUT ||
              cell_direction == CELL_DIRECTION_IN);
-  if (circ->marked_for_close)
+  if (circ->marked_for_close) {
+    /* nothing is queued to the crypto threadpool */
+    log_notice(LD_OR, "circuit marked for close, not queueing to crypto threadpool");
+    circuit_receive_relay_cell_post(circ, 0, cell_direction, __LINE__, __FILE__);
     return 0;
+  }
 
   if (relay_crypt(circ, cell, cell_direction, &layer_hint, &recognized) < 0) {
     log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
-    return -END_CIRC_REASON_INTERNAL;
+    //return -END_CIRC_REASON_INTERNAL;
+    reason = -END_CIRC_REASON_INTERNAL;
+    goto exit;
   }
 
   if (recognized) {
@@ -206,7 +300,8 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
 
       /* We need to drop this cell no matter what to avoid code that expects
        * a certain purpose (such as the hidserv code). */
-      return 0;
+      //return 0;
+      goto exit_okay;
     }
 
     conn = relay_lookup_conn(circ, cell, cell_direction, layer_hint);
@@ -218,7 +313,8 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
         log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
                "connection_edge_process_relay_cell (away from origin) "
                "failed.");
-        return reason;
+        //return reason;
+        goto exit;
       }
     }
     if (cell_direction == CELL_DIRECTION_IN) {
@@ -228,10 +324,12 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
                                                        layer_hint)) < 0) {
         log_warn(LD_OR,
                  "connection_edge_process_relay_cell (at origin) failed.");
-        return reason;
+        //return reason;
+        goto exit;
       }
     }
-    return 0;
+    //return 0;
+    goto exit_okay;
   }
 
   /* not recognized. pass it on. */
@@ -249,9 +347,12 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
      * XXX: Shouldn't they always die? */
     if (circ->purpose == CIRCUIT_PURPOSE_PATH_BIAS_TESTING) {
       TO_ORIGIN_CIRCUIT(circ)->path_state = PATH_STATE_USE_FAILED;
-      return -END_CIRC_REASON_TORPROTOCOL;
+      //return -END_CIRC_REASON_TORPROTOCOL;
+      reason = -END_CIRC_REASON_TORPROTOCOL;
+      goto exit;
     } else {
-      return 0;
+      //return 0;
+      goto exit_okay;
     }
   }
 
@@ -271,13 +372,17 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
                  "circuits");
         /* XXXX Do this here, or just return -1? */
         circuit_mark_for_close(circ, -reason);
-        return reason;
+        //return reason;
+        goto exit;
       }
-      return 0;
+      //return 0;
+      goto exit_okay;
     }
     log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
            "Didn't recognize cell, but circ stops here! Closing circ.");
-    return -END_CIRC_REASON_TORPROTOCOL;
+    //return -END_CIRC_REASON_TORPROTOCOL;
+    reason = -END_CIRC_REASON_TORPROTOCOL;
+    goto exit;
   }
 
   log_debug(LD_OR,"Passing on unrecognized cell.");
@@ -287,7 +392,15 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
                                   * the cells. */
 
   append_cell_to_circuit_queue(circ, chan, cell, cell_direction, 0);
-  return 0;
+
+exit_okay:
+  reason = 0;
+
+exit:
+  /* functionality encapsulated in circuit_receive_relay_cell() was previously
+   * in command.c */
+  circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
+  return reason;
 }
 
 /** Do the appropriate en/decryptions for <b>cell</b> arriving on
