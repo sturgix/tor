@@ -214,15 +214,15 @@ else {
 }
 
 workqueue_reply_t
-cryptothread_threadfn(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
-            crypt_path_t **layer_hint, char *recognized) {
-//cryptothread_threadfn(void *state_, void *work_) {
+//cryptothread_threadfn(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
+//            crypt_path_t **layer_hint, char *recognized) {
+cryptothread_threadfn(void *state_, void *work_) {
 
-//  (void)state_;
-//  cryptothread_job_t  *job = work_;
+  (void)state_;
+  cryptothread_job_t  *job = work_;
 
-//  if (relay_crypt(job) < 0) {
-  if (relay_crypt(circ,cell,cell_direction,layer_hint,recognized) < 0 ) {
+//  if (relay_crypt(circ,cell,cell_direction,layer_hint,recognized) < 0 ) {
+  if (relay_crypt(job) < 0) {
     log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
     //return -END_CIRC_REASON_INTERNAL;
     //return WQ_RPL_ERROR;
@@ -268,7 +268,7 @@ queue_job_for_cryptothread(cryptothread_job_t *job_) {
  *  - If not recognized, then we need to relay it: append it to the appropriate
  *    cell_queue on <b>circ</b>.
  *
- * Return -<b>reason</b> on failure.
+ * Return -<b>reason</b> on failure. //TODO: although, now nothing checks this return.
  */
 int
 circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
@@ -296,7 +296,8 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
   job->cell = cell;
   job->cell_direction = cell_direction;
 
-  if (cryptothread_threadfn(job->circ, job->cell, job->cell_direction, &(job->layer_hint), &(job->recognized)) < 0) {
+//  if (cryptothread_threadfn(job->circ, job->cell, job->cell_direction, &(job->layer_hint), &(job->recognized)) < 0) {
+  if (cryptothread_threadfn(NULL, job) < 0) {
     log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
     reason = -END_CIRC_REASON_INTERNAL;
     circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
@@ -449,14 +450,20 @@ exit:
  * else return 0.
  */
 int
-relay_crypt(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
-            crypt_path_t **layer_hint, char *recognized)
+//relay_crypt(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
+//            crypt_path_t **layer_hint, char *recognized)
+relay_crypt(cryptothread_job_t *job)
 {
   relay_header_t rh;
+  cell_t *cell = job->cell;
+  circuit_t *circ = job->circ;
+  cell_direction_t cell_direction = job->cell_direction;
+  crypt_path_t **layer_hint = &(job->layer_hint);
+  char  *recognized = &(job->recognized);
 
   tor_assert(circ);
   tor_assert(cell);
-  tor_assert(recognized);
+//  tor_assert(recognized);
   tor_assert(cell_direction == CELL_DIRECTION_IN ||
              cell_direction == CELL_DIRECTION_OUT);
 

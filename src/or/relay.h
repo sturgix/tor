@@ -85,8 +85,9 @@ typedef struct cryptothread_job_t {
   char              recognized;
 } cryptothread_job_t;
 
-int relay_crypt(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
-                crypt_path_t **layer_hint, char *recognized);
+int relay_crypt(cryptothread_job_t *job);
+//int relay_crypt(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
+//                crypt_path_t **layer_hint, char *recognized);
 
 circid_t packed_cell_get_circid(const packed_cell_t *cell, int wide_circ_ids);
 

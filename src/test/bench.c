@@ -469,12 +469,12 @@ bench_cell_ops(void)
   reset_perftime();
 
   for (outbound = 0; outbound <= 1; ++outbound) {
-    cell_direction_t d = outbound ? CELL_DIRECTION_OUT : CELL_DIRECTION_IN;
+    //cell_direction_t d = outbound ? CELL_DIRECTION_OUT : CELL_DIRECTION_IN;
     start = perftime();
     for (i = 0; i < iters; ++i) {
-      char recognized = 0;
-      crypt_path_t *layer_hint = NULL;
-      relay_crypt(TO_CIRCUIT(or_circ), cell, d, &layer_hint, &recognized);
+      //char recognized = 0;
+      //crypt_path_t *layer_hint = NULL;
+      //relay_crypt(TO_CIRCUIT(or_circ), cell, d, &layer_hint, &recognized);
     }
     end = perftime();
     printf("%sbound cells: %.2f ns per cell. (%.2f ns per byte of payload)\n",
