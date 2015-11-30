@@ -213,6 +213,8 @@ else {
   return;
 }
 
+/** This is executed in the main thread
+ */
 workqueue_reply_t
 //cryptothread_threadfn(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
 //            crypt_path_t **layer_hint, char *recognized) {
@@ -233,86 +235,19 @@ cryptothread_threadfn(void *state_, void *work_) {
   return 0;
 }
 
-#if 0
-static int
-queue_job_for_cryptothread(cryptothread_job_t *job_) {
+static void
+cryptothread_replyfn(void *work_) {
 
-#if 0
-  workqueue_entry_t *queue_entry;
+  tor_assert(work_);
 
-  queue_entry = threadpool_queue_work(get_crypto_threadpool(),
-                      cryptothread_threadfn,
-                      cryptothread_replyfn,
-                      job_);
-
-  if (!queue_entry) {
-    log_warn(LD_BUG, "Couldn't queue work on crypto threadpool");
-    return -1;
-  }
-
-  log_debug(LD_OR, "Queued cryptothread task %p", job_);
-#endif
-  cryptothread_threadfn(NULL, job);
-//  cryptothread_replyfn(
-  return 0;
-}
-#endif
-
-/** Receive a relay cell:
- *  - Crypt it (encrypt if headed toward the origin or if we <b>are</b> the
- *    origin; decrypt if we're headed toward the exit).
- *  - Check if recognized (if exitward).
- *  - If recognized and the digest checks out, then find if there's a stream
- *    that the cell is intended for, and deliver it to the right
- *    connection_edge.
- *  - If not recognized, then we need to relay it: append it to the appropriate
- *    cell_queue on <b>circ</b>.
- *
- * Return -<b>reason</b> on failure. //TODO: although, now nothing checks this return.
- */
-int
-circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
-                           cell_direction_t cell_direction)
-{
   channel_t *chan = NULL;
   crypt_path_t *layer_hint=NULL;
   char recognized=0;
   int reason;
-
-  tor_assert(cell);
-  tor_assert(circ);
-  tor_assert(cell_direction == CELL_DIRECTION_OUT ||
-             cell_direction == CELL_DIRECTION_IN);
-  if (circ->marked_for_close) {
-    /* nothing is queued to the crypto threadpool */
-    log_notice(LD_OR, "circuit marked for close, not queueing to crypto threadpool");
-    circuit_receive_relay_cell_post(circ, 0, cell_direction, __LINE__, __FILE__);
-    return 0;
-  }
-
-  // TODO: check return value of tor_malloc_zero()
-  cryptothread_job_t *job = tor_malloc_zero(sizeof(cryptothread_job_t));
-  job->circ = circ;
-  job->cell = cell;
-  job->cell_direction = cell_direction;
-
-//  if (cryptothread_threadfn(job->circ, job->cell, job->cell_direction, &(job->layer_hint), &(job->recognized)) < 0) {
-  if (cryptothread_threadfn(NULL, job) < 0) {
-    log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
-    reason = -END_CIRC_REASON_INTERNAL;
-    circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
-    tor_free(job);
-    return reason;
-  }
-
-#if 0
-  if (relay_crypt(circ, cell, cell_direction, &layer_hint, &recognized) < 0) {
-    log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
-    //return -END_CIRC_REASON_INTERNAL;
-    reason = -END_CIRC_REASON_INTERNAL;
-    goto exit;
-  }
-#endif
+  cell_t *cell;
+  circuit_t *circ;
+  cell_direction_t cell_direction;
+  cryptothread_job_t  *job = work_;
 
   layer_hint=job->layer_hint;
   recognized=job->recognized;
@@ -429,7 +364,97 @@ exit:
    * in command.c */
   circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
   tor_free(job);
-  return reason;
+  /* TODO: with cpuworker constructs, how do we capture the return?
+   * Does it even matter anymore since the reture value was really only needed for
+   * the call to circuit_receive_relay_cell_post()? */
+//  return reason;
+  return;
+}
+
+#if 0
+static int
+queue_job_for_cryptothread(cryptothread_job_t *job_) {
+
+#if 0
+  workqueue_entry_t *queue_entry;
+
+  queue_entry = threadpool_queue_work(get_crypto_threadpool(),
+                      cryptothread_threadfn,
+                      cryptothread_replyfn,
+                      job_);
+
+  if (!queue_entry) {
+    log_warn(LD_BUG, "Couldn't queue work on crypto threadpool");
+    return -1;
+  }
+
+  log_debug(LD_OR, "Queued cryptothread task %p", job_);
+#endif
+  cryptothread_threadfn(NULL, job);
+//  cryptothread_replyfn(
+  return 0;
+}
+#endif
+
+/** Receive a relay cell:
+ *  - Crypt it (encrypt if headed toward the origin or if we <b>are</b> the
+ *    origin; decrypt if we're headed toward the exit).
+ *  - Check if recognized (if exitward).
+ *  - If recognized and the digest checks out, then find if there's a stream
+ *    that the cell is intended for, and deliver it to the right
+ *    connection_edge.
+ *  - If not recognized, then we need to relay it: append it to the appropriate
+ *    cell_queue on <b>circ</b>.
+ *
+ * Return -<b>reason</b> on failure. //TODO: although, now nothing checks this return.
+ */
+int
+circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
+                           cell_direction_t cell_direction)
+{
+//  channel_t *chan = NULL;
+//  crypt_path_t *layer_hint=NULL;
+//  char recognized=0;
+  int reason;
+
+  tor_assert(cell);
+  tor_assert(circ);
+  tor_assert(cell_direction == CELL_DIRECTION_OUT ||
+             cell_direction == CELL_DIRECTION_IN);
+  if (circ->marked_for_close) {
+    /* nothing is queued to the crypto threadpool */
+    log_notice(LD_OR, "circuit marked for close, not queueing to crypto threadpool");
+    circuit_receive_relay_cell_post(circ, 0, cell_direction, __LINE__, __FILE__);
+    return 0;
+  }
+
+  // TODO: check return value of tor_malloc_zero()
+  cryptothread_job_t *job = tor_malloc_zero(sizeof(cryptothread_job_t));
+  job->circ = circ;
+  job->cell = cell;
+  job->cell_direction = cell_direction;
+
+//  if (cryptothread_threadfn(job->circ, job->cell, job->cell_direction, &(job->layer_hint), &(job->recognized)) < 0) {
+  if (cryptothread_threadfn(NULL, job) < 0) {
+    log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
+    reason = -END_CIRC_REASON_INTERNAL;
+    circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
+    tor_free(job);
+    return reason;
+  }
+
+#if 0
+  if (relay_crypt(circ, cell, cell_direction, &layer_hint, &recognized) < 0) {
+    log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
+    //return -END_CIRC_REASON_INTERNAL;
+    reason = -END_CIRC_REASON_INTERNAL;
+    goto exit;
+  }
+#endif
+
+  cryptothread_replyfn(job);
+
+  return 0;
 }
 
 /** Do the appropriate en/decryptions for <b>cell</b> arriving on
