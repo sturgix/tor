@@ -82,7 +82,7 @@ replyqueue_process_cb(evutil_socket_t sock, short events, void *arg)
   replyqueue_t *rq = arg;
   (void) sock;
   (void) events;
-  replyqueue_process(rq);		//common/workqueue.c in this func, main thread calls reply_fn()
+  replyqueue_process(rq);		//in common/workqueue.c. main thread calls replyfn().
 }
 
 /** Initialize the cpuworker subsystem. It is OK to call this more than once

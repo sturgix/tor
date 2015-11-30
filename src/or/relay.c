@@ -235,25 +235,22 @@ cryptothread_threadfn(void *state_, void *work_) {
   return 0;
 }
 
+/** Called by main thread's event loop
+ */
 static void
 cryptothread_replyfn(void *work_) {
 
   tor_assert(work_);
 
-  channel_t *chan = NULL;
-  crypt_path_t *layer_hint=NULL;
-  char recognized=0;
   int reason;
-  cell_t *cell;
-  circuit_t *circ;
-  cell_direction_t cell_direction;
-  cryptothread_job_t  *job = work_;
+  channel_t *chan = NULL;
 
-  layer_hint=job->layer_hint;
-  recognized=job->recognized;
-  cell = job->cell;
-  circ = job->circ;
-  cell_direction = job->cell_direction;
+  cryptothread_job_t *job = work_;
+  crypt_path_t *layer_hint = job->layer_hint;
+  char recognized = job->recognized;
+  cell_t *cell = job->cell;
+  circuit_t *circ = job->circ;
+  cell_direction_t cell_direction = job->cell_direction;
 
   if (recognized) {
     edge_connection_t *conn = NULL;
@@ -371,7 +368,6 @@ exit:
   return;
 }
 
-#if 0
 static int
 queue_job_for_cryptothread(cryptothread_job_t *job_) {
 
@@ -390,11 +386,9 @@ queue_job_for_cryptothread(cryptothread_job_t *job_) {
 
   log_debug(LD_OR, "Queued cryptothread task %p", job_);
 #endif
-  cryptothread_threadfn(NULL, job);
-//  cryptothread_replyfn(
+  cryptothread_threadfn(NULL, job_);
   return 0;
 }
-#endif
 
 /** Receive a relay cell:
  *  - Crypt it (encrypt if headed toward the origin or if we <b>are</b> the
@@ -435,7 +429,8 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
   job->cell_direction = cell_direction;
 
 //  if (cryptothread_threadfn(job->circ, job->cell, job->cell_direction, &(job->layer_hint), &(job->recognized)) < 0) {
-  if (cryptothread_threadfn(NULL, job) < 0) {
+//  if (cryptothread_threadfn(NULL, job) < 0) {
+  if (queue_job_for_cryptothread(job) < 0 ) {
     log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
     reason = -END_CIRC_REASON_INTERNAL;
     circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
