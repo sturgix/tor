@@ -28,6 +28,7 @@
 #include "connection_or.h"
 #include "control.h"
 #include "cpuworker.h"
+#include "cryptothreads.h"
 #include "crypto_s2k.h"
 #include "directory.h"
 #include "dirserv.h"
@@ -2129,6 +2130,9 @@ do_main_loop(void)
     /* launch cpuworkers. Need to do this *after* we've read the onion key. */
     cpu_init();
   }
+
+  /* initial thread pool for AES cryptographic operations */
+  crypto_threads_init();
 
   /* set up once-a-second callback. */
   if (! second_timer) {
