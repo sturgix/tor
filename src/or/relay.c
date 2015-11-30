@@ -182,12 +182,12 @@ circuit_receive_relay_cell_post(circuit_t *circ, int reason, cell_direction_t di
 
   const or_options_t *options = get_options();
 
+#if 0
   if (circ->marked_for_close) {
     log_warn(LD_BUG,
         "Call to circuit_mark_for_close on closed circuit from %s:%d with reason %i", file, line, reason);
     return;
   }
-#if 0
 else {
     log_warn(LD_OR,
         "FYI: Call to circuit_mark_for_close from %s:%d", file, line);
@@ -296,7 +296,7 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
   job->cell = cell;
   job->cell_direction = cell_direction;
 
-  if (cryptothread_threadfn(circ, cell, cell_direction, &layer_hint, &recognized) < 0) {
+  if (cryptothread_threadfn(job->circ, job->cell, job->cell_direction, &(job->layer_hint), &(job->recognized)) < 0) {
     log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
     reason = -END_CIRC_REASON_INTERNAL;
     circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
@@ -312,6 +312,12 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
     goto exit;
   }
 #endif
+
+  layer_hint=job->layer_hint;
+  recognized=job->recognized;
+  cell = job->cell;
+  circ = job->circ;
+  cell_direction = job->cell_direction;
 
   if (recognized) {
     edge_connection_t *conn = NULL;
