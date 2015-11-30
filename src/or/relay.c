@@ -213,22 +213,27 @@ else {
   return;
 }
 
-#if 0
 workqueue_reply_t
-cryptothread_threadfn(void *state_, void *work_) {
+cryptothread_threadfn(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
+            crypt_path_t **layer_hint, char *recognized) {
+//cryptothread_threadfn(void *state_, void *work_) {
 
-  (void)state_;
-  cryptothread_job_t  *job = work_;
+//  (void)state_;
+//  cryptothread_job_t  *job = work_;
 
-  if (relay_crypt(job) < 0) {
+//  if (relay_crypt(job) < 0) {
+  if (relay_crypt(circ,cell,cell_direction,layer_hint,recognized) < 0 ) {
     log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
     //return -END_CIRC_REASON_INTERNAL;
-    return WQ_RPL_ERROR;
+    //return WQ_RPL_ERROR;
+    return -1;
   }
 
-  return WQ_RPL_REPLY;
+  //return WQ_RPL_REPLY;
+  return 0;
 }
 
+#if 0
 static int
 queue_job_for_cryptothread(cryptothread_job_t *job_) {
 
@@ -285,12 +290,28 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
     return 0;
   }
 
+  // TODO: check return value of tor_malloc_zero()
+  cryptothread_job_t *job = tor_malloc_zero(sizeof(cryptothread_job_t));
+  job->circ = circ;
+  job->cell = cell;
+  job->cell_direction = cell_direction;
+
+  if (cryptothread_threadfn(circ, cell, cell_direction, &layer_hint, &recognized) < 0) {
+    log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
+    reason = -END_CIRC_REASON_INTERNAL;
+    circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
+    tor_free(job);
+    return reason;
+  }
+
+#if 0
   if (relay_crypt(circ, cell, cell_direction, &layer_hint, &recognized) < 0) {
     log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
     //return -END_CIRC_REASON_INTERNAL;
     reason = -END_CIRC_REASON_INTERNAL;
     goto exit;
   }
+#endif
 
   if (recognized) {
     edge_connection_t *conn = NULL;
@@ -400,6 +421,7 @@ exit:
   /* functionality encapsulated in circuit_receive_relay_cell() was previously
    * in command.c */
   circuit_receive_relay_cell_post(circ, reason, cell_direction, __LINE__, __FILE__);
+  tor_free(job);
   return reason;
 }
 
