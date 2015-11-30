@@ -77,6 +77,14 @@ void circuit_clear_cell_queue(circuit_t *circ, channel_t *chan);
 
 void stream_choice_seed_weak_rng(void);
 
+typedef struct cryptothread_job_t {
+  circuit_t         *circ;
+  cell_t            *cell;
+  cell_direction_t  cell_direction;
+  crypt_path_t      *layer_hint;
+  char              recognized;
+} cryptothread_job_t;
+
 int relay_crypt(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
                 crypt_path_t **layer_hint, char *recognized);
 
