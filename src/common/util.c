@@ -3487,8 +3487,10 @@ load_windows_system_library(const TCHAR *library_name)
   n = GetSystemDirectory(path, MAX_PATH);
   if (n == 0 || n + _tcslen(library_name) + 2 >= MAX_PATH)
     return 0;
-  _tcscat(path, TEXT("\\"));
-  _tcscat(path, library_name);
+  /* _tcscat:Does not check for buffer overflows when concatenating 
+   * to destination. */
+  strlcat(path, TEXT("\\"), MAX_PATH);
+  strlcat(path, library_name, MATH_PATH);
   return LoadLibrary(path);
 }
 #endif
