@@ -469,14 +469,22 @@ bench_cell_ops(void)
   reset_perftime();
 
   for (outbound = 0; outbound <= 1; ++outbound) {
-    //cell_direction_t d = outbound ? CELL_DIRECTION_OUT : CELL_DIRECTION_IN;
+    cell_direction_t d = outbound ? CELL_DIRECTION_OUT : CELL_DIRECTION_IN;
+    cryptothread_job_t *job = tor_malloc_zero(sizeof(cryptothread_job_t));
+    job->circ = TO_CIRCUIT(or_circ);
+    job->cell = cell;
+    job->cell_direction = d;
     start = perftime();
     for (i = 0; i < iters; ++i) {
+      job->recognized = 0;
+      job->layer_hint = NULL;
+      relay_crypt(job);
       //char recognized = 0;
       //crypt_path_t *layer_hint = NULL;
       //relay_crypt(TO_CIRCUIT(or_circ), cell, d, &layer_hint, &recognized);
     }
     end = perftime();
+    tor_free(job);
     printf("%sbound cells: %.2f ns per cell. (%.2f ns per byte of payload)\n",
            outbound?"Out":" In",
            NANOCOUNT(start,end,iters),
