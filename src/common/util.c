@@ -2875,51 +2875,7 @@ expand_filename(const char *filename)
 #ifdef _WIN32
   return tor_strdup(filename);
 #else
-  if (*filename == '~') {
-    char *home, *result=NULL;
-    const char *rest;
-
-    if (filename[1] == '/' || filename[1] == '\0') {
-      home = getenv("HOME");
-      if (!home) {
-        log_warn(LD_CONFIG, "Couldn't find $HOME environment variable while "
-                 "expanding \"%s\"; defaulting to \"\".", filename);
-        home = tor_strdup("");
-      } else {
-        home = tor_strdup(home);
-      }
-      rest = strlen(filename)>=2?(filename+2):"";
-    } else {
-#ifdef HAVE_PWD_H
-      char *username, *slash;
-      slash = strchr(filename, '/');
-      if (slash)
-        username = tor_strndup(filename+1,slash-filename-1);
-      else
-        username = tor_strdup(filename+1);
-      if (!(home = get_user_homedir(username))) {
-        log_warn(LD_CONFIG,"Couldn't get homedir for \"%s\"",username);
-        tor_free(username);
-        return NULL;
-      }
-      tor_free(username);
-      rest = slash ? (slash+1) : "";
-#else
-      log_warn(LD_CONFIG, "Couldn't expand homedir on system without pwd.h");
-      return tor_strdup(filename);
-#endif
-    }
-    tor_assert(home);
-    /* Remove trailing slash. */
-    if (strlen(home)>1 && !strcmpend(home,PATH_SEPARATOR)) {
-      home[strlen(home)-1] = '\0';
-    }
-    tor_asprintf(&result,"%s"PATH_SEPARATOR"%s",home,rest);
-    tor_free(home);
-    return result;
-  } else {
-    return tor_strdup(filename);
-  }
+  return realpath(filename, NULL);
 #endif
 }
 
