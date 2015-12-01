@@ -82,6 +82,7 @@ typedef struct cryptothread_job_t {
   cell_t            *cell;
   cell_direction_t  cell_direction;
   crypt_path_t      *layer_hint;
+  int               reason;
   char              recognized;
 } cryptothread_job_t;
 
