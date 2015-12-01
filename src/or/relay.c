@@ -213,8 +213,6 @@ else {
   return;
 }
 
-/** This is executed in the main thread
- */
 workqueue_reply_t
 //cryptothread_threadfn(circuit_t *circ, cell_t *cell, cell_direction_t cell_direction,
 //            crypt_path_t **layer_hint, char *recognized) {
@@ -222,6 +220,7 @@ cryptothread_threadfn(void *state_, void *work_) {
 
   (void)state_;
   cryptothread_job_t  *job = work_;
+  log_debug(LD_OR, "[cryptothreads] cryptothread_threadfn() => job %p", job);
 
 //  if (relay_crypt(circ,cell,cell_direction,layer_hint,recognized) < 0 ) {
   if (relay_crypt(job) < 0) {
@@ -251,6 +250,9 @@ cryptothread_replyfn(void *work_) {
   cell_t *cell = job->cell;
   circuit_t *circ = job->circ;
   cell_direction_t cell_direction = job->cell_direction;
+
+
+  log_debug(LD_OR, "[cryptothreads] cryptothread_replyfn() => job %p", job);
 
   if (recognized) {
     edge_connection_t *conn = NULL;
@@ -331,7 +333,10 @@ cryptothread_replyfn(void *work_) {
         log_warn(LD_REND, "Error relaying cell across rendezvous; closing "
                  "circuits");
         /* XXXX Do this here, or just return -1? */
-        circuit_mark_for_close(circ, -reason);
+        /** TODO: don't need to call circuit_mark_for_close() here anymore 
+         * as it is called in circuit_receive_relay_cell_post()
+         */
+        //circuit_mark_for_close(circ, -reason);
         //return reason;
         goto exit;
       }
@@ -369,7 +374,9 @@ exit:
 }
 
 static int
-queue_job_for_cryptothread(cryptothread_job_t *job_) {
+queue_job_for_cryptothread(cryptothread_job_t *job) {
+
+  log_debug(LD_OR, "[cryptothreads] Queueing cryptothread task %p", job);
 
 #if 0
   workqueue_entry_t *queue_entry;
@@ -377,16 +384,17 @@ queue_job_for_cryptothread(cryptothread_job_t *job_) {
   queue_entry = threadpool_queue_work(get_crypto_threadpool(),
                       cryptothread_threadfn,
                       cryptothread_replyfn,
-                      job_);
+                      job);
 
   if (!queue_entry) {
     log_warn(LD_BUG, "Couldn't queue work on crypto threadpool");
     return -1;
   }
 
-  log_debug(LD_OR, "Queued cryptothread task %p", job_);
-#endif
-  cryptothread_threadfn(NULL, job_);
+#endif 
+  log_debug(LD_OR, "[cryptothreads] Queued cryptothread task   %p", job);
+  cryptothread_threadfn(NULL, job);
+//  job->circ->workqueue_entry = queue_entry;
   return 0;
 }
 
