@@ -182,6 +182,8 @@ circuit_receive_relay_cell_post(circuit_t *circ, int reason, cell_direction_t di
 
   const or_options_t *options = get_options();
 
+  tor_assert(options);
+
 #if 0
   if (circ->marked_for_close) {
     log_warn(LD_BUG,
@@ -218,6 +220,8 @@ workqueue_reply_t
 //            crypt_path_t **layer_hint, char *recognized) {
 cryptothread_threadfn(void *state_, void *work_) {
 
+  tor_assert(work_);
+
   (void)state_;
   cryptothread_job_t  *job = work_;
   log_debug(LD_OR, "[cryptothreads] cryptothread_threadfn() => job %p", job);
@@ -226,12 +230,15 @@ cryptothread_threadfn(void *state_, void *work_) {
   if (relay_crypt(job) < 0) {
     log_warn(LD_BUG,"relay crypt failed. Dropping connection.");
     //return -END_CIRC_REASON_INTERNAL;
-    //return WQ_RPL_ERROR;
-    return -1;
+    job->reason = -END_CIRC_REASON_INTERNAL;
+    return WQ_RPL_REPLY;
+    // TODO: change return value for refactored single-threaded test version
+    //return -1;
   }
 
-  //return WQ_RPL_REPLY;
-  return 0;
+  job->reason = 0;
+  return WQ_RPL_REPLY;
+  //return 0;
 }
 
 /** Called by main thread's event loop
@@ -251,8 +258,12 @@ cryptothread_replyfn(void *work_) {
   circuit_t *circ = job->circ;
   cell_direction_t cell_direction = job->cell_direction;
 
-
   log_debug(LD_OR, "[cryptothreads] cryptothread_replyfn() => job %p", job);
+
+  if (job->reason != 0 ) {
+    reason = job->reason;
+    goto exit;
+  }
 
   if (recognized) {
     edge_connection_t *conn = NULL;
@@ -376,9 +387,12 @@ exit:
 static int
 queue_job_for_cryptothread(cryptothread_job_t *job) {
 
+  tor_assert(job);
+
   log_debug(LD_OR, "[cryptothreads] Queueing cryptothread task %p", job);
 
-#if 0
+// TODO: disable for refactored single-threaded test version
+//#if 0
   workqueue_entry_t *queue_entry;
 
   queue_entry = threadpool_queue_work(get_crypto_threadpool(),
@@ -387,13 +401,14 @@ queue_job_for_cryptothread(cryptothread_job_t *job) {
                       job);
 
   if (!queue_entry) {
-    log_warn(LD_BUG, "Couldn't queue work on crypto threadpool");
+    log_warn(LD_BUG, "[cryptothreads] Couldn't queue work on crypto threadpool");
     return -1;
   }
-
-#endif 
+//#endif
   log_debug(LD_OR, "[cryptothreads] Queued cryptothread task   %p", job);
-  cryptothread_threadfn(NULL, job);
+
+// TODO: enable for refactored single-threaded test version
+//  cryptothread_threadfn(NULL, job);
 //  job->circ->workqueue_entry = queue_entry;
   return 0;
 }
@@ -455,7 +470,8 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
   }
 #endif
 
-  cryptothread_replyfn(job);
+// TODO: enable for refactored single-threaded test version
+//  cryptothread_replyfn(job);
 
   return 0;
 }
@@ -482,6 +498,8 @@ int
 //            crypt_path_t **layer_hint, char *recognized)
 relay_crypt(cryptothread_job_t *job)
 {
+  tor_assert(job);
+
   relay_header_t rh;
   cell_t *cell = job->cell;
   circuit_t *circ = job->circ;
