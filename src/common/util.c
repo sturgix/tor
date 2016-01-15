@@ -2094,16 +2094,15 @@ check_private_dir(const char *dirname, cpd_check_t check,
       fd = open(sandbox_intern_string(dirname), O_NOFOLLOW);
 
       if ( fd == -1 ) return -1;
-    } else { //if (!(check & CPD_CHECK)) {
+
+    } else if (!(check & CPD_CHECK)) { 
       log_warn(LD_FS, "Directory %s does not exist.", dirname);
       return -1;
     }
 
     /* XXXX In the case where check==CPD_CHECK, we should look at the
      * parent directory a little harder. */
-
-    /* Directory does not exist and CREATE flag not set. Why return success? */
-    //return 0;
+    return 0;
   }
 
   tor_assert(fd);
